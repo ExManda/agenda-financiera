@@ -196,6 +196,8 @@ def month_services(conn, month):
         original_due = datetime.strptime(item["due_date"], "%Y-%m-%d")
         if item["frequency"] == "anual" and original_due.month != selected_month.month:
             continue
+        if item["frequency"] == "unico" and original_due.strftime("%Y-%m") != month_start:
+            continue
         due_day = min(original_due.day, last_day)
         item["due_date"] = f"{selected_month.year:04d}-{selected_month.month:02d}-{due_day:02d}"
         item["status"] = "paid" if item["month_paid"] or item["status"] == "paid" else "pending"

@@ -302,7 +302,7 @@ def get_dashboard(month: Optional[str] = None):
     if month:
         services = month_services(conn, month)
         conn.close()
-        next_due = sorted(services, key=lambda item: item["due_date"])[:5]
+        next_due = sorted((item for item in services if item["status"] == "pending"), key=lambda item: item["due_date"])[:5]
         return {
             "month": month,
             "total_services": len(services),
@@ -330,6 +330,7 @@ def get_dashboard(month: Optional[str] = None):
     next_due = conn.execute("""
         SELECT name, due_date, amount
         FROM services
+        WHERE status = 'pending'
         ORDER BY due_date ASC
         LIMIT 5
     """).fetchall()

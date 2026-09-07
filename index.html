@@ -22,6 +22,12 @@
     h1 { font-size:clamp(31px,4vw,48px); letter-spacing:-1.5px; margin:0 0 8px; font-weight:500; }
     .subtitle { color:var(--muted); font:14px 'Roboto',sans-serif; }
     .today { background:var(--white); border:1px solid var(--line); padding:12px 15px; font:12px 'Roboto',sans-serif; color:var(--muted); }
+    .month-bar { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:22px; padding:13px 15px; background:var(--ink); color:#fff; }
+    .month-bar strong { font-size:16px; font-weight:500; text-transform:capitalize; }
+    .month-controls { display:flex; align-items:center; gap:8px; }
+    .month-controls button { border:1px solid #527168; background:transparent; color:#fff; width:32px; height:30px; cursor:pointer; border-radius:3px; }
+    .month-controls button:hover { background:#2b5148; }
+    .month-controls .current-month { width:auto; padding:0 12px; font-size:12px; }
     .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:36px; }
     .stat { padding:22px 23px; border-top:4px solid var(--green); background:var(--white); min-height:126px; }
     .stat:nth-child(2) { border-color:var(--coral); }
@@ -75,13 +81,14 @@
     </aside>
     <main>
       <header id="resumen"><div><h1>Resumen del mes</h1><div class="subtitle">Tus gastos recurrentes, sin perderlos de vista.</div></div><div class="today" id="today"></div></header>
+      <div class="month-bar"><strong id="selected-month">Mes seleccionado</strong><div class="month-controls"><button id="previous-month" aria-label="Mes anterior">&lsaquo;</button><button class="current-month" id="current-month">Este mes</button><button id="next-month" aria-label="Mes siguiente">&rsaquo;</button></div></div>
       <section class="stats" aria-label="Resumen financiero">
-        <div class="stat"><div class="stat-label">Servicios activos</div><div class="stat-value" id="total-services">-</div></div>
+        <div class="stat"><div class="stat-label">Pagados / gastos fijos</div><div class="stat-value" id="total-services">-</div></div>
         <div class="stat"><div class="stat-label">Gasto mensual estimado</div><div class="stat-value" id="total-amount">-</div></div>
         <div class="stat"><div class="stat-label">Gastos compartidos</div><div class="stat-value" id="shared-amount">-</div></div>
       </section>
       <div class="layout">
-        <section id="servicios"><div class="section-head"><h2>Servicios</h2><button class="button" id="open-form">+ Agregar servicio</button></div><div class="table-wrap"><table><thead><tr><th>Servicio</th><th>Vencimiento</th><th>Importe</th><th>Cuenta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="services-body"><tr><td class="empty" colspan="6">Cargando servicios...</td></tr></tbody></table></div></section>
+        <section id="servicios"><div class="section-head"><h2>Gastos fijos del mes</h2><button class="button" id="open-form">+ Agregar servicio</button></div><div class="table-wrap"><table><thead><tr><th>Servicio</th><th>Vencimiento</th><th>Importe</th><th>Cuenta</th><th>Estado</th><th>Acciones</th></tr></thead><tbody id="services-body"><tr><td class="empty" colspan="6">Cargando servicios...</td></tr></tbody></table></div></section>
         <section><div class="section-head"><h2>Pr&oacute;ximos vencimientos</h2></div><ul class="due-list" id="due-list"><li class="empty">Cargando...</li></ul></section>
       </div>
     </main>
@@ -97,18 +104,24 @@
   </form></div></dialog><div class="notice" id="notice"></div>
   <script>
     const money = value => new Intl.NumberFormat('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:2 }).format(value || 0);
+    let selectedMonth = new Date().toISOString().slice(0, 7);
+    const monthName = value => new Intl.DateTimeFormat('es-AR', { month:'long', year:'numeric' }).format(new Date(`${value}-01T12:00:00`));
+    const monthPath = path => `${path}${path.includes('?') ? '&' : '?'}month=${selectedMonth}`;
     const date = value => new Intl.DateTimeFormat('es-AR', { day:'2-digit', month:'short' }).format(new Date(value + 'T12:00:00'));
     const $ = selector => document.querySelector(selector);
     const notice = message => { const box = $('#notice'); box.textContent = message; box.style.display = 'block'; setTimeout(() => box.style.display = 'none', 2800); };
     async function api(path, options) { const response = await fetch(path, { cache:'no-store', ...options }); const payload = await response.json().catch(() => null); if (!response.ok) throw new Error(payload?.detail || payload?.message || `Error ${response.status}`); return payload; }
-    async function loadDashboard() { const data = await api('/api/dashboard'); $('#total-services').textContent = data.total_services; $('#total-amount').textContent = money(data.total_amount); $('#shared-amount').textContent = money(data.shared_total); $('#due-list').innerHTML = data.next_due.length ? data.next_due.map(item => `<li><div><div class="due-name">${item.name}</div><div class="due-date">Vence ${date(item.due_date)}</div></div><div class="due-amount">${money(item.amount)}</div></li>`).join('') : '<li class="empty">No hay vencimientos.</li>'; }
-    async function loadServices() { const services = await api('/api/services'); $('#services-body').innerHTML = services.length ? services.map(item => `<tr><td><div class="service-name">${item.name}</div><div class="category">${item.category}</div></td><td>${date(item.due_date)}</td><td>${money(item.amount)}</td><td>${item.account_name || '-'}</td><td><span class="pill ${item.status === 'pending' ? 'pending' : ''}">${item.status === 'pending' ? 'Pendiente' : 'Pagado'}</span></td><td><button class="edit-button" data-service-id="${item.id}" title="Editar servicio" aria-label="Editar ${item.name}">Editar</button></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Todav&iacute;a no hay servicios.</td></tr>'; document.querySelectorAll('.edit-button').forEach(button => { button.onclick = () => openEditForm(services.find(item => item.id === Number(button.dataset.serviceId))); }); }
+    async function loadDashboard() { const data = await api(monthPath('/api/dashboard')); $('#selected-month').textContent = monthName(selectedMonth); $('#total-services').textContent = `${data.paid_services} / ${data.total_services}`; $('#total-amount').textContent = money(data.total_amount); $('#shared-amount').textContent = money(data.shared_total); $('#due-list').innerHTML = data.next_due.length ? data.next_due.map(item => `<li><div><div class="due-name">${item.name}</div><div class="due-date">Vence ${date(item.due_date)}</div></div><div class="due-amount">${money(item.amount)}</div></li>`).join('') : '<li class="empty">No hay vencimientos.</li>'; }
+    async function markMonth(service) { const paid = service.status !== 'paid'; try { await api(`/api/services/${service.id}/monthly-status`, { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ month:selectedMonth, paid }) }); notice(paid ? 'Gasto marcado como pagado' : 'Gasto marcado como pendiente'); await refresh(); } catch (error) { notice(error.message); } }
+    async function loadServices() { const services = await api(monthPath('/api/services')); $('#services-body').innerHTML = services.length ? services.map(item => `<tr><td><div class="service-name">${item.name}</div><div class="category">${item.category}</div></td><td>${date(item.due_date)}</td><td>${money(item.amount)}</td><td>${item.account_name || '-'}</td><td><span class="pill ${item.status === 'pending' ? 'pending' : ''}">${item.status === 'pending' ? 'Pendiente' : 'Pagado'}</span></td><td><button class="edit-button" data-service-id="${item.id}" title="Editar servicio" aria-label="Editar ${item.name}">Editar</button> <button class="edit-button month-status" data-service-id="${item.id}" title="Cambiar estado mensual">${item.status === 'paid' ? 'Desmarcar' : 'Marcar pago'}</button></td></tr>`).join('') : '<tr><td class="empty" colspan="6">Todav&iacute;a no hay gastos para este mes.</td></tr>'; document.querySelectorAll('.edit-button').forEach(button => { const service = services.find(item => item.id === Number(button.dataset.serviceId)); button.onclick = () => button.classList.contains('month-status') ? markMonth(service) : openEditForm(service); }); }
     async function loadOptions() { const [users, accounts] = await Promise.all([api('/api/users'), api('/api/accounts')]); $('#owner-select').innerHTML = users.map(item => `<option value="${item.id}">${item.name}</option>`).join(''); $('#account-select').innerHTML = accounts.map(item => `<option value="${item.id}">${item.name}</option>`).join(''); }
     async function openNewForm() { await loadOptions(); $('#service-form').reset(); $('#service-form').service_id.value = ''; $('#form-title').textContent = 'Nuevo servicio'; $('#service-dialog').showModal(); }
     async function openEditForm(service) { await loadOptions(); const form = $('#service-form'); form.reset(); form.service_id.value = service.id; form.name.value = service.name; form.category.value = service.category; form.owner_user_id.value = service.owner_user_id; form.account_id.value = service.account_id; form.amount.value = service.amount; form.frequency.value = service.frequency; form.due_date.value = service.due_date; form.status.value = service.status; form.reference.value = service.reference || ''; form.is_shared.checked = Boolean(service.is_shared); $('#form-title').textContent = 'Editar servicio'; $('#service-dialog').showModal(); }
     async function refresh() { try { await Promise.all([loadDashboard(), loadServices()]); } catch (error) { notice(error.message); } }
+    function changeMonth(offset) { const current = new Date(`${selectedMonth}-01T12:00:00`); current.setMonth(current.getMonth() + offset); selectedMonth = current.toISOString().slice(0, 7); refresh(); }
     $('#today').textContent = new Intl.DateTimeFormat('es-AR', { dateStyle:'full' }).format(new Date());
     $('#open-form').onclick = openNewForm;
+    $('#previous-month').onclick = () => changeMonth(-1); $('#next-month').onclick = () => changeMonth(1); $('#current-month').onclick = () => { selectedMonth = new Date().toISOString().slice(0, 7); refresh(); };
     $('#close-form').onclick = () => $('#service-dialog').close(); $('#cancel-form').onclick = () => $('#service-dialog').close();
     $('#service-form').onsubmit = async event => { event.preventDefault(); const form = event.target; const data = Object.fromEntries(new FormData(form)); const serviceId = data.service_id; delete data.service_id; data.owner_user_id = Number(data.owner_user_id); data.account_id = Number(data.account_id); data.amount = Number(data.amount); data.due_date = form.due_date.value; data.is_shared = form.is_shared.checked; try { await api(serviceId ? `/api/services/${serviceId}` : '/api/services', { method:serviceId ? 'PUT' : 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }); form.reset(); $('#service-dialog').close(); notice(serviceId ? 'Servicio actualizado' : 'Servicio agregado'); await refresh(); } catch (error) { notice(error.message); } };
     refresh();

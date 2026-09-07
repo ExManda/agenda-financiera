@@ -6,6 +6,7 @@ from typing import Optional, List
 import sqlite3
 import os
 import shutil
+import calendar
 from datetime import datetime
 from pathlib import Path
 
@@ -141,6 +142,11 @@ class ServiceCreate(BaseModel):
     status: str = "pending"
 
 
+class MonthlyStatus(BaseModel):
+    month: str
+    paid: bool
+
+
 @app.on_event("startup")
 def startup_event():
     init_db()
@@ -162,18 +168,70 @@ def get_accounts():
     return [dict(r) for r in rows]
 
 
-@app.get("/api/services")
-def get_services():
-    conn = get_db()
+def month_services(conn, month):
+    try:
+        selected_month = datetime.strptime(month, "%Y-%m")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="El mes debe tener formato YYYY-MM")
+
+    month_start = selected_month.strftime("%Y-%m")
     rows = conn.execute("""
-        SELECT s.*, u.name as owner_name, a.name as account_name
+        SELECT s.*, u.name as owner_name, a.name as account_name,
+               EXISTS(
+                   SELECT 1 FROM payments p
+                   WHERE p.service_id = s.id
+                     AND strftime('%Y-%m', p.payment_date) = ?
+                     AND p.status = 'paid'
+               ) as month_paid
         FROM services s
         LEFT JOIN users u ON u.id = s.owner_user_id
         LEFT JOIN accounts a ON a.id = s.account_id
         ORDER BY s.due_date
-    """).fetchall()
+    """, (month_start,)).fetchall()
+
+    result = []
+    last_day = calendar.monthrange(selected_month.year, selected_month.month)[1]
+    for row in rows:
+        item = dict(row)
+        original_due = datetime.strptime(item["due_date"], "%Y-%m-%d")
+        if item["frequency"] == "anual" and original_due.month != selected_month.month:
+            continue
+        due_day = min(original_due.day, last_day)
+        item["due_date"] = f"{selected_month.year:04d}-{selected_month.month:02d}-{due_day:02d}"
+        item["status"] = "paid" if item["month_paid"] or item["status"] == "paid" else "pending"
+        item["month"] = month_start
+        result.append(item)
+    return result
+
+
+@app.get("/api/services")
+def get_services(month: Optional[str] = None):
+    conn = get_db()
+    if month:
+        result = month_services(conn, month)
+        conn.close()
+        return result
+    rows = conn.execute("SELECT s.*, u.name as owner_name, a.name as account_name FROM services s LEFT JOIN users u ON u.id = s.owner_user_id LEFT JOIN accounts a ON a.id = s.account_id ORDER BY s.due_date").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+@app.put("/api/services/{service_id}/monthly-status")
+def update_monthly_status(service_id: int, item: MonthlyStatus):
+    try:
+        datetime.strptime(item.month, "%Y-%m")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="El mes debe tener formato YYYY-MM")
+    conn = get_db()
+    if conn.execute("SELECT id FROM services WHERE id = ?", (service_id,)).fetchone() is None:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Servicio no encontrado")
+    conn.execute("DELETE FROM payments WHERE service_id = ? AND strftime('%Y-%m', payment_date) = ?", (service_id, item.month))
+    if item.paid:
+        conn.execute("INSERT INTO payments (service_id, user_id, amount, payment_date, status) SELECT id, owner_user_id, amount, ?, 'paid' FROM services WHERE id = ?", (f"{item.month}-01", service_id))
+    conn.commit()
+    conn.close()
+    return {"message": "Estado mensual actualizado"}
 
 
 @app.post("/api/services")
@@ -239,8 +297,21 @@ def update_service(service_id: int, item: ServiceCreate):
 
 
 @app.get("/api/dashboard")
-def get_dashboard():
+def get_dashboard(month: Optional[str] = None):
     conn = get_db()
+    if month:
+        services = month_services(conn, month)
+        conn.close()
+        next_due = sorted(services, key=lambda item: item["due_date"])[:5]
+        return {
+            "month": month,
+            "total_services": len(services),
+            "total_amount": round(sum(float(item["amount"]) for item in services), 2),
+            "shared_total": round(sum(float(item["amount"]) for item in services if item["is_shared"]), 2),
+            "personal_total": round(sum(float(item["amount"]) for item in services if not item["is_shared"]), 2),
+            "paid_services": sum(1 for item in services if item["status"] == "paid"),
+            "next_due": next_due
+        }
     total_services = conn.execute("SELECT COUNT(*) as total FROM services").fetchone()["total"]
     total_amount = conn.execute("SELECT COALESCE(SUM(amount), 0) as total FROM services").fetchone()["total"]
 

@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 import sqlite3
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -19,6 +20,7 @@ app.add_middleware(
 
 DB_NAME = "agenda_financiera.db"
 BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = Path("/tmp") / DB_NAME if os.getenv("VERCEL") else BASE_DIR / DB_NAME
 
 
 @app.get("/", include_in_schema=False)
@@ -27,7 +29,7 @@ def serve_frontend():
 
 
 def get_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 

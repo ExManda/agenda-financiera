@@ -22,6 +22,8 @@ app.add_middleware(
 DB_NAME = "agenda_financiera.db"
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path("/tmp") / DB_NAME if os.getenv("VERCEL") else BASE_DIR / DB_NAME
+DB_SEED_MARKER = DB_PATH.with_suffix(".seed")
+DB_SEED_VERSION = os.getenv("VERCEL_GIT_COMMIT_SHA", "initial")
 
 
 @app.get("/", include_in_schema=False)
@@ -30,8 +32,12 @@ def serve_frontend():
 
 
 def get_db():
-    if os.getenv("VERCEL") and not DB_PATH.exists():
+    needs_seed = not DB_PATH.exists() or not DB_SEED_MARKER.exists()
+    if not needs_seed:
+        needs_seed = DB_SEED_MARKER.read_text() != DB_SEED_VERSION
+    if os.getenv("VERCEL") and needs_seed:
         shutil.copyfile(BASE_DIR / DB_NAME, DB_PATH)
+        DB_SEED_MARKER.write_text(DB_SEED_VERSION)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn

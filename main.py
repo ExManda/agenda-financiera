@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 import sqlite3
 import os
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -29,6 +30,8 @@ def serve_frontend():
 
 
 def get_db():
+    if os.getenv("VERCEL") and not DB_PATH.exists():
+        shutil.copyfile(BASE_DIR / DB_NAME, DB_PATH)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn

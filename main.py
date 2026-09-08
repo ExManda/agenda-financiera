@@ -167,7 +167,7 @@ def init_db():
                 PRIMARY KEY (service_id, month)
             )
         """)
-            seed_postgres(conn)
+        seed_postgres(conn)
         conn.commit()
         conn.close()
         return

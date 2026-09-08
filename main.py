@@ -59,10 +59,21 @@ def serve_frontend():
 
 @app.get("/api/health")
 def health():
+    postgres_connection = False
+    postgres_error = None
+    if POSTGRES_URL and psycopg:
+        try:
+            connection = psycopg.connect(POSTGRES_URL, connect_timeout=5)
+            connection.close()
+            postgres_connection = True
+        except Exception as error:
+            postgres_error = type(error).__name__
     return {
         "status": "ok",
-        "storage": "postgres" if USING_POSTGRES else "sqlite",
+        "storage": "postgres" if postgres_connection else "sqlite",
         "persistent_storage_configured": bool(POSTGRES_URL),
+        "postgres_connection": postgres_connection,
+        "postgres_error_type": postgres_error,
     }
 
 

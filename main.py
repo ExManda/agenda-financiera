@@ -292,6 +292,10 @@ def ics_escape(value):
     return str(value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
 
 
+def fold_ics_line(line):
+    return [line[index:index + 72] if index == 0 else " " + line[index:index + 71] for index in range(0, len(line), 72)]
+
+
 @app.get("/api/calendar.ics")
 def download_calendar(month: Optional[str] = None):
     selected_month = month or datetime.now().strftime("%Y-%m")
@@ -333,9 +337,16 @@ def download_calendar(month: Optional[str] = None):
                     "END:VEVENT",
                 ])
     conn.close()
-    calendar_feed = "\r\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Agenda Financiera//ES", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", *events, "END:VCALENDAR", ""])
+    calendar_lines = [
+        "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Agenda Financiera//ES",
+        "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "X-WR-CALNAME:Agenda Financiera",
+        "X-WR-CALDESC:Vencimientos de gastos fijos", "X-WR-TIMEZONE:America/Argentina/Buenos_Aires",
+        "REFRESH-INTERVAL;VALUE=DURATION:P1D", "X-PUBLISHED-TTL:P1D", *events, "END:VCALENDAR", ""
+    ]
+    calendar_feed = "\r\n".join(line for item in calendar_lines for line in fold_ics_line(item))
     filename = f"agenda-{selected_month}.ics"
     headers = {} if month is None else {"Content-Disposition": f'attachment; filename="{filename}"'}
+    headers["Cache-Control"] = "no-store, max-age=0"
     return Response(content=calendar_feed, media_type="text/calendar", headers=headers)
 
 

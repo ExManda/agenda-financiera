@@ -167,11 +167,6 @@ def init_db():
                 PRIMARY KEY (service_id, month)
             )
         """)
-        for column, definition in (("kind", "TEXT NOT NULL DEFAULT 'service'"), ("owner_user_id", "BIGINT NOT NULL DEFAULT 1"), ("account_id", "BIGINT NOT NULL DEFAULT 1")):
-            try:
-                conn.execute(f"ALTER TABLE monthly_service_overrides ADD COLUMN {column} {definition}")
-            except Exception:
-                pass
             seed_postgres(conn)
         conn.commit()
         conn.close()

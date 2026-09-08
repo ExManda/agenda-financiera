@@ -424,11 +424,19 @@ def fold_ics_line(line):
 
 
 @app.get("/api/calendar.ics")
-def download_calendar(month: Optional[str] = None):
+def download_calendar(month: Optional[str] = None, sync: bool = False):
     selected_month = month or datetime.now().strftime("%Y-%m")
+    months = [selected_month]
+    if sync:
+        start = datetime.strptime(selected_month, "%Y-%m")
+        months = []
+        for offset in range(12):
+            current = start.month - 1 + offset
+            months.append(f"{start.year + current // 12:04d}-{current % 12 + 1:02d}")
     conn = get_db()
     events = []
-    for service in month_services(conn, selected_month):
+    for calendar_month in months:
+        for service in month_services(conn, calendar_month):
             due = datetime.strptime(service["due_date"], "%Y-%m-%d")
             description = f"Vencimiento: {service['category']} - {money_text(service['amount'])}"
             dates = [due]

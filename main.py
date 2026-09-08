@@ -73,6 +73,7 @@ def health():
                 connection = psycopg.connect(database_url, connect_timeout=5)
                 connection.close()
                 postgres_connection = True
+                postgres_error = None
                 break
             except Exception as error:
                 postgres_error = type(error).__name__

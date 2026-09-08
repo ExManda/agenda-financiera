@@ -495,29 +495,28 @@ def update_monthly_status(service_id: int, item: MonthlyStatus):
 @app.post("/api/services")
 def create_service(item: ServiceCreate):
     conn = get_db()
-    conn.execute("""
+    insert_query = """
         INSERT INTO services (
             name, category, kind, owner_user_id, account_id, amount, frequency,
             due_date, is_shared, status, reference, notes
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        item.name,
-        item.category,
-        item.kind,
-        item.owner_user_id,
-        item.account_id,
-        item.amount,
-        item.frequency,
-        item.due_date,
-        1 if item.is_shared else 0,
-        item.status,
-        item.reference,
-        item.notes
-    ))
-    conn.commit()
-    last_id_query = "SELECT lastval() as id" if USING_POSTGRES else "SELECT last_insert_rowid() as id"
-    last_id = conn.execute(last_id_query).fetchone()["id"]
-    conn.close()
+    """
+    values = (
+        item.name, item.category, item.kind, item.owner_user_id, item.account_id,
+        item.amount, item.frequency, item.due_date, 1 if item.is_shared else 0,
+        item.status, item.reference, item.notes
+    )
+    try:
+        if USING_POSTGRES:
+            last_id = conn.execute(f"{insert_query} RETURNING id", values).fetchone()["id"]
+        else:
+            conn.execute(insert_query, values)
+            last_id = conn.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        conn.commit()
+        conn.close()
+    except Exception as error:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"No se pudo guardar el gasto: {type(error).__name__}") from error
     return {"id": last_id, "message": "Servicio creado"}
 
 

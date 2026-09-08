@@ -319,7 +319,8 @@ def download_calendar(month: Optional[str] = None):
             for occurrence in dates:
                 events.extend([
                     "BEGIN:VEVENT",
-                    f"UID{service['id']}-{occurrence:%Y%m%d}@agenda-financiera",
+                    f"UID:{service['id']}-{occurrence:%Y%m%d}@agenda-financiera",
+                    f"DTSTAMP:{datetime.utcnow():%Y%m%dT%H%M%SZ}",
                     f"DTSTART;VALUE=DATE:{occurrence:%Y%m%d}",
                     f"DTEND;VALUE=DATE:{(occurrence + timedelta(days=1)):%Y%m%d}",
                     f"SUMMARY:{ics_escape(service['name'])}",
@@ -332,7 +333,7 @@ def download_calendar(month: Optional[str] = None):
                     "END:VEVENT",
                 ])
     conn.close()
-    calendar_feed = "\r\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Agenda Financiera//ES", "CALSCALE:GREGORIAN", *events, "END:VCALENDAR", ""])
+    calendar_feed = "\r\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Agenda Financiera//ES", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", *events, "END:VCALENDAR", ""])
     filename = f"agenda-{selected_month}.ics"
     headers = {} if month is None else {"Content-Disposition": f'attachment; filename="{filename}"'}
     return Response(content=calendar_feed, media_type="text/calendar", headers=headers)

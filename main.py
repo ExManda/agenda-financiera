@@ -356,7 +356,7 @@ def get_accounts():
     return [dict(r) for r in rows]
 
 
-def month_services(conn, month):
+def month_services(conn, month, view: Optional[str] = None):
     try:
         selected_month = datetime.strptime(month, "%Y-%m")
     except ValueError:
@@ -399,15 +399,21 @@ def month_services(conn, month):
         item["due_weekday"] = original_due.weekday()
         item["status"] = "paid" if item["month_paid"] or item["status"] == "paid" else "pending"
         item["month"] = month_start
+        if view == "shared" and not item["is_shared"]:
+            continue
+        if view in ("exequiel", "cecilia") and (item["owner_name"] or "").lower() != view:
+            continue
+        if view in ("exequiel", "cecilia") and item["is_shared"]:
+            continue
         result.append(item)
     return result
 
 
 @app.get("/api/services")
-def get_services(month: Optional[str] = None):
+def get_services(month: Optional[str] = None, view: Optional[str] = None):
     conn = get_db()
     if month:
-        result = month_services(conn, month)
+        result = month_services(conn, month, view)
         conn.close()
         return result
     rows = conn.execute("SELECT s.*, u.name as owner_name, a.name as account_name FROM services s LEFT JOIN users u ON u.id = s.owner_user_id LEFT JOIN accounts a ON a.id = s.account_id ORDER BY s.due_date").fetchall()
@@ -566,10 +572,10 @@ def update_service(service_id: int, item: ServiceCreate, month: Optional[str] = 
 
 
 @app.get("/api/dashboard")
-def get_dashboard(month: Optional[str] = None):
+def get_dashboard(month: Optional[str] = None, view: Optional[str] = None):
     conn = get_db()
     if month:
-        services = month_services(conn, month)
+        services = month_services(conn, month, view)
         conn.close()
         next_due = sorted((item for item in services if item["status"] == "pending"), key=lambda item: item["due_date"])[:5]
         return {

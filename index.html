@@ -29,6 +29,9 @@
     .month-controls button:hover { background:#2b5148; }
     .month-controls .current-month { width:auto; padding:0 12px; font-size:12px; }
     .calendar-download { border:1px solid #527168; background:transparent; color:#fff; padding:7px 10px; cursor:pointer; border-radius:3px; font-size:12px; }
+    .view-filters { display:flex; gap:8px; margin-bottom:22px; flex-wrap:wrap; }
+    .view-filter { border:1px solid var(--line); background:var(--white); color:var(--muted); padding:9px 14px; cursor:pointer; border-radius:4px; font-size:12px; }
+    .view-filter.active, .view-filter:hover { background:var(--green); border-color:var(--green); color:#fff; }
     .calendar-section { margin-bottom:34px; }
     .calendar { background:var(--white); border:1px solid var(--line); }
     .calendar-weekdays, .calendar-grid { display:grid; grid-template-columns:repeat(7, minmax(0, 1fr)); }
@@ -84,7 +87,7 @@
     .form-actions { grid-column:1/-1; display:flex; justify-content:flex-end; gap:10px; margin-top:8px; }
     .secondary { background:transparent; color:var(--ink); border:1px solid var(--line); }
     .notice { position:fixed; right:22px; bottom:22px; background:var(--ink); color:#fff; padding:14px 18px; font:13px 'Roboto',sans-serif; display:none; }
-    @media (max-width:800px) { .shell { display:block; } aside { padding:20px; } .brand { margin-bottom:18px; } nav { display:flex; gap:5px; overflow:auto; } nav a { white-space:nowrap; } .aside-note { display:none; } main { padding:28px 18px; } header { display:block; margin-bottom:24px; } .today { display:inline-block; margin-top:16px; } .stats { grid-template-columns:1fr; gap:10px; margin-bottom:26px; } .layout { grid-template-columns:1fr; gap:30px; } form { grid-template-columns:1fr; } label.full { grid-column:auto; } .form-actions { grid-column:auto; } .month-bar { align-items:flex-start; flex-wrap:wrap; } .month-controls { width:100%; justify-content:flex-end; } .calendar-day { min-height:64px; padding:5px; } .calendar-weekdays div { padding:7px 4px; text-align:center; } .calendar-event { font-size:9px; padding:3px; } .calendar-event span { display:none; } }
+    @media (max-width:800px) { .view-filters { margin-bottom:16px; } .shell { display:block; } aside { padding:20px; } .brand { margin-bottom:18px; } nav { display:flex; gap:5px; overflow:auto; } nav a { white-space:nowrap; } .aside-note { display:none; } main { padding:28px 18px; } header { display:block; margin-bottom:24px; } .today { display:inline-block; margin-top:16px; } .stats { grid-template-columns:1fr; gap:10px; margin-bottom:26px; } .layout { grid-template-columns:1fr; gap:30px; } form { grid-template-columns:1fr; } label.full { grid-column:auto; } .form-actions { grid-column:auto; } .month-bar { align-items:flex-start; flex-wrap:wrap; } .month-controls { width:100%; justify-content:flex-end; } .calendar-day { min-height:64px; padding:5px; } .calendar-weekdays div { padding:7px 4px; text-align:center; } .calendar-event { font-size:9px; padding:3px; } .calendar-event span { display:none; } }
     @media (max-width:520px) { main { padding:22px 12px; } h1 { font-size:32px; letter-spacing:-1px; } h2 { font-size:20px; } .brand { font-size:22px; } .month-bar { padding:11px; } .month-controls { justify-content:space-between; gap:5px; } .calendar-download { flex:1; } .calendar-day { min-height:52px; padding:4px; } .day-number { font-size:12px; } .calendar-event { margin-top:3px; border-left-width:2px; font-size:8px; white-space:nowrap; } .calendar-event strong { max-width:100%; } th, td { padding:12px 10px; } .table-wrap { margin-right:0; } .section-head { align-items:flex-start; gap:10px; flex-wrap:wrap; } .button { padding:9px 12px; } .due-list li { padding:14px 12px; } }
     @media (max-width:360px) { .month-controls { flex-wrap:wrap; } .calendar-download { flex-basis:100%; } .calendar-day { min-height:46px; } .calendar-event { display:none; } .calendar-day:has(.calendar-event) { background:#fff2ed; } }
   </style>
@@ -99,6 +102,7 @@
     <main>
       <header id="resumen"><div><h1>Resumen del mes</h1><div class="subtitle">Tus gastos recurrentes, sin perderlos de vista.</div></div><div class="today" id="today"></div></header>
       <div class="month-bar"><strong id="selected-month">Mes seleccionado</strong><div class="month-controls"><button class="calendar-download" id="copy-calendar-link">Copiar calendario del mes</button><button id="previous-month" aria-label="Mes anterior">&lsaquo;</button><button class="current-month" id="current-month">Este mes</button><button id="next-month" aria-label="Mes siguiente">&rsaquo;</button></div></div>
+      <div class="view-filters" aria-label="Filtrar gastos"><button class="view-filter active" data-view="all">Todos</button><button class="view-filter" data-view="exequiel">Exequiel</button><button class="view-filter" data-view="cecilia">Cecilia</button><button class="view-filter" data-view="shared">Compartidos</button></div>
       <section class="stats" aria-label="Resumen financiero">
         <div class="stat"><div class="stat-label">Pagados / gastos fijos</div><div class="stat-value" id="total-services">-</div></div>
         <div class="stat"><div class="stat-label">Gasto mensual estimado</div><div class="stat-value" id="total-amount">-</div></div>
@@ -123,8 +127,9 @@
   <script>
     const money = value => new Intl.NumberFormat('es-AR', { style:'currency', currency:'ARS', maximumFractionDigits:2 }).format(value || 0);
     let selectedMonth = new Date().toISOString().slice(0, 7);
+    let selectedView = 'all';
     const monthName = value => new Intl.DateTimeFormat('es-AR', { month:'long', year:'numeric' }).format(new Date(`${value}-01T12:00:00`));
-    const monthPath = path => `${path}${path.includes('?') ? '&' : '?'}month=${selectedMonth}`;
+    const monthPath = path => `${path}${path.includes('?') ? '&' : '?'}month=${selectedMonth}&view=${selectedView}`;
     const date = value => new Intl.DateTimeFormat('es-AR', { day:'2-digit', month:'short' }).format(new Date(value + 'T12:00:00'));
     const $ = selector => document.querySelector(selector);
     const notice = message => { const box = $('#notice'); box.textContent = message; box.style.display = 'block'; setTimeout(() => box.style.display = 'none', 2800); };
@@ -139,6 +144,7 @@
     function changeMonth(offset) { const current = new Date(`${selectedMonth}-01T12:00:00`); current.setMonth(current.getMonth() + offset); selectedMonth = current.toISOString().slice(0, 7); refresh(); }
     $('#today').textContent = new Intl.DateTimeFormat('es-AR', { dateStyle:'full' }).format(new Date());
     $('#open-form').onclick = openNewForm;
+    document.querySelectorAll('.view-filter').forEach(button => { button.onclick = () => { selectedView = button.dataset.view; document.querySelectorAll('.view-filter').forEach(item => item.classList.toggle('active', item === button)); refresh(); }; });
     $('#copy-calendar-link').onclick = async () => { const link = `${window.location.origin}/api/calendar.ics?month=${selectedMonth}&version=5`; await navigator.clipboard.writeText(link); notice('Enlace de este mes copiado'); };
     $('#previous-month').onclick = () => changeMonth(-1); $('#next-month').onclick = () => changeMonth(1); $('#current-month').onclick = () => { selectedMonth = new Date().toISOString().slice(0, 7); refresh(); };
     $('#close-form').onclick = () => $('#service-dialog').close(); $('#cancel-form').onclick = () => $('#service-dialog').close();

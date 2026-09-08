@@ -351,17 +351,9 @@ def fold_ics_line(line):
 @app.get("/api/calendar.ics")
 def download_calendar(month: Optional[str] = None):
     selected_month = month or datetime.now().strftime("%Y-%m")
-    months = [selected_month]
-    if month is None:
-        start = datetime.strptime(selected_month, "%Y-%m")
-        months = []
-        for offset in range(12):
-            current = start.month - 1 + offset
-            months.append(f"{start.year + current // 12:04d}-{current % 12 + 1:02d}")
     conn = get_db()
     events = []
-    for selected_month in months:
-        for service in month_services(conn, selected_month):
+    for service in month_services(conn, selected_month):
             due = datetime.strptime(service["due_date"], "%Y-%m-%d")
             description = f"Vencimiento: {service['category']} - {money_text(service['amount'])}"
             dates = [due]
@@ -397,7 +389,7 @@ def download_calendar(month: Optional[str] = None):
     ]
     calendar_feed = "\r\n".join(line for item in calendar_lines for line in fold_ics_line(item))
     filename = f"agenda-{selected_month}.ics"
-    headers = {} if month is None else {"Content-Disposition": f'attachment; filename="{filename}"'}
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     headers["Cache-Control"] = "no-store, max-age=0"
     return Response(content=calendar_feed, media_type="text/calendar", headers=headers)
 

@@ -322,6 +322,7 @@ def month_services(conn, month):
             continue
         due_day = min(original_due.day, last_day)
         item["due_date"] = f"{selected_month.year:04d}-{selected_month.month:02d}-{due_day:02d}"
+        item["due_weekday"] = original_due.weekday()
         item["status"] = "paid" if item["month_paid"] or item["status"] == "paid" else "pending"
         item["month"] = month_start
         result.append(item)
@@ -362,7 +363,7 @@ def download_calendar(month: Optional[str] = None):
                 dates = [
                     datetime(year, month, day_number)
                     for day_number in range(1, calendar.monthrange(year, month)[1] + 1)
-                    if datetime(year, month, day_number).weekday() == due.weekday()
+                    if datetime(year, month, day_number).weekday() == service["due_weekday"]
                 ]
             for occurrence in dates:
                 events.extend([

@@ -39,6 +39,7 @@ POSTGRES_URLS = [value for value in (
 ) if value]
 POSTGRES_URL = POSTGRES_URLS[0] if POSTGRES_URLS else None
 USING_POSTGRES = bool(POSTGRES_URLS and psycopg)
+STARTUP_ERROR = None
 
 
 class DatabaseConnection:
@@ -81,6 +82,7 @@ def health():
         "persistent_storage_configured": bool(POSTGRES_URL),
         "postgres_connection": postgres_connection,
         "postgres_error_type": postgres_error,
+        "startup_error_type": STARTUP_ERROR,
     }
 
 
@@ -328,11 +330,12 @@ class MonthlyStatus(BaseModel):
 
 @app.on_event("startup")
 def startup_event():
+    global STARTUP_ERROR
     if not (os.getenv("VERCEL") and not POSTGRES_URL):
         try:
             init_db()
-        except RuntimeError:
-            pass
+        except Exception as error:
+            STARTUP_ERROR = type(error).__name__
 
 
 @app.get("/api/users")

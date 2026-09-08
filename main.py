@@ -484,9 +484,10 @@ def update_monthly_status(service_id: int, item: MonthlyStatus):
         conn.close()
         raise HTTPException(status_code=404, detail="Servicio no encontrado")
     payment_month = "to_char(payment_date, 'YYYY-MM')" if USING_POSTGRES else "strftime('%Y-%m', payment_date)"
+    payment_date = datetime.strptime(f"{item.month}-01", "%Y-%m-%d").date() if USING_POSTGRES else f"{item.month}-01"
     conn.execute(f"DELETE FROM payments WHERE service_id = ? AND {payment_month} = ?", (service_id, item.month))
     if item.paid:
-        conn.execute("INSERT INTO payments (service_id, user_id, amount, payment_date, status) SELECT id, owner_user_id, amount, ?, 'paid' FROM services WHERE id = ?", (f"{item.month}-01", service_id))
+        conn.execute("INSERT INTO payments (service_id, user_id, amount, payment_date, status) SELECT id, owner_user_id, amount, ?, 'paid' FROM services WHERE id = ?", (payment_date, service_id))
     conn.commit()
     conn.close()
     return {"message": "Estado mensual actualizado"}
@@ -503,7 +504,8 @@ def create_service(item: ServiceCreate):
     """
     values = (
         item.name, item.category, item.kind, item.owner_user_id, item.account_id,
-        item.amount, item.frequency, item.due_date, 1 if item.is_shared else 0,
+        item.amount, item.frequency, datetime.strptime(item.due_date, "%Y-%m-%d").date() if USING_POSTGRES else item.due_date,
+        bool(item.is_shared) if USING_POSTGRES else (1 if item.is_shared else 0),
         item.status, item.reference, item.notes
     )
     try:
@@ -542,7 +544,8 @@ def update_service(service_id: int, item: ServiceCreate, month: Optional[str] = 
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             service_id, month, item.kind, item.owner_user_id, item.account_id, item.name, item.category, item.amount, item.frequency,
-            item.due_date, 1 if item.is_shared else 0, item.status, item.reference, item.notes
+            datetime.strptime(item.due_date, "%Y-%m-%d").date() if USING_POSTGRES else item.due_date,
+            bool(item.is_shared) if USING_POSTGRES else (1 if item.is_shared else 0), item.status, item.reference, item.notes
         ))
     else:
         conn.execute("""
@@ -553,7 +556,8 @@ def update_service(service_id: int, item: ServiceCreate, month: Optional[str] = 
         WHERE id = ?
         """, (
             item.name, item.category, item.kind, item.owner_user_id, item.account_id,
-            item.amount, item.frequency, item.due_date, 1 if item.is_shared else 0,
+            item.amount, item.frequency, datetime.strptime(item.due_date, "%Y-%m-%d").date() if USING_POSTGRES else item.due_date,
+            bool(item.is_shared) if USING_POSTGRES else (1 if item.is_shared else 0),
             item.status, item.reference, item.notes, service_id
         ))
     conn.commit()

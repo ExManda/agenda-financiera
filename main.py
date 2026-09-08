@@ -84,6 +84,31 @@ def execute(conn, query, params=()):
 def init_db():
     conn = get_db()
     if USING_POSTGRES:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS monthly_service_overrides (
+                service_id BIGINT NOT NULL,
+                month TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                owner_user_id BIGINT NOT NULL,
+                account_id BIGINT NOT NULL,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                amount NUMERIC(12,2) NOT NULL,
+                frequency TEXT NOT NULL,
+                due_date DATE NOT NULL,
+                is_shared BOOLEAN NOT NULL DEFAULT FALSE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                reference TEXT,
+                notes TEXT,
+                PRIMARY KEY (service_id, month)
+            )
+        """)
+        for column, definition in (("kind", "TEXT NOT NULL DEFAULT 'service'"), ("owner_user_id", "BIGINT NOT NULL DEFAULT 1"), ("account_id", "BIGINT NOT NULL DEFAULT 1")):
+            try:
+                conn.execute(f"ALTER TABLE monthly_service_overrides ADD COLUMN {column} {definition}")
+            except Exception:
+                pass
+        conn.commit()
         conn.close()
         return
     else:
@@ -130,6 +155,30 @@ def init_db():
             status TEXT NOT NULL DEFAULT 'paid'
         )
         """)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS monthly_service_overrides (
+            service_id INTEGER NOT NULL,
+            month TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            owner_user_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            amount REAL NOT NULL,
+            frequency TEXT NOT NULL,
+            due_date TEXT NOT NULL,
+            is_shared INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pending',
+            reference TEXT,
+            notes TEXT,
+            PRIMARY KEY (service_id, month)
+        )
+        """)
+        for column, definition in (("kind", "TEXT NOT NULL DEFAULT 'service'"), ("owner_user_id", "INTEGER NOT NULL DEFAULT 1"), ("account_id", "INTEGER NOT NULL DEFAULT 1")):
+            try:
+                conn.execute(f"ALTER TABLE monthly_service_overrides ADD COLUMN {column} {definition}")
+            except sqlite3.OperationalError:
+                pass
 
     if USING_POSTGRES:
         seed_postgres(conn)
@@ -259,6 +308,9 @@ def month_services(conn, month):
     last_day = calendar.monthrange(selected_month.year, selected_month.month)[1]
     for row in rows:
         item = dict(row)
+        override = conn.execute("SELECT kind, owner_user_id, account_id, name, category, amount, frequency, due_date, is_shared, status, reference, notes FROM monthly_service_overrides WHERE service_id = ? AND month = ?", (item["id"], month_start)).fetchone()
+        if override:
+            item.update(dict(override))
         due_date = item["due_date"]
         if hasattr(due_date, "strftime"):
             original_due = due_date
@@ -403,34 +455,41 @@ def create_service(item: ServiceCreate):
 
 
 @app.put("/api/services/{service_id}")
-def update_service(service_id: int, item: ServiceCreate):
+def update_service(service_id: int, item: ServiceCreate, month: Optional[str] = None):
     conn = get_db()
     existing = conn.execute("SELECT id FROM services WHERE id = ?", (service_id,)).fetchone()
     if existing is None:
         conn.close()
         raise HTTPException(status_code=404, detail="Servicio no encontrado")
 
-    conn.execute("""
+    if month:
+        try:
+            datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            conn.close()
+            raise HTTPException(status_code=400, detail="El mes debe tener formato YYYY-MM")
+        conn.execute("DELETE FROM monthly_service_overrides WHERE service_id = ? AND month = ?", (service_id, month))
+        conn.execute("""
+            INSERT INTO monthly_service_overrides (
+                service_id, month, kind, owner_user_id, account_id, name, category, amount, frequency, due_date,
+                is_shared, status, reference, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            service_id, month, item.kind, item.owner_user_id, item.account_id, item.name, item.category, item.amount, item.frequency,
+            item.due_date, 1 if item.is_shared else 0, item.status, item.reference, item.notes
+        ))
+    else:
+        conn.execute("""
         UPDATE services SET
             name = ?, category = ?, kind = ?, owner_user_id = ?, account_id = ?,
             amount = ?, frequency = ?, due_date = ?, is_shared = ?, status = ?,
             reference = ?, notes = ?
         WHERE id = ?
-    """, (
-        item.name,
-        item.category,
-        item.kind,
-        item.owner_user_id,
-        item.account_id,
-        item.amount,
-        item.frequency,
-        item.due_date,
-        1 if item.is_shared else 0,
-        item.status,
-        item.reference,
-        item.notes,
-        service_id
-    ))
+        """, (
+            item.name, item.category, item.kind, item.owner_user_id, item.account_id,
+            item.amount, item.frequency, item.due_date, 1 if item.is_shared else 0,
+            item.status, item.reference, item.notes, service_id
+        ))
     conn.commit()
     conn.close()
     return {"id": service_id, "message": "Servicio actualizado"}

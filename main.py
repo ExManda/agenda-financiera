@@ -10,8 +10,12 @@ import calendar
 from datetime import datetime
 from pathlib import Path
 
-import psycopg
-from psycopg.rows import dict_row
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:
+    psycopg = None
+    dict_row = None
 
 app = FastAPI(title="Agenda Financiera Personal")
 
@@ -29,7 +33,7 @@ DB_PATH = Path("/tmp") / DB_NAME if os.getenv("VERCEL") else BASE_DIR / DB_NAME
 DB_SEED_MARKER = DB_PATH.with_suffix(".seed")
 DB_SEED_VERSION = os.getenv("VERCEL_GIT_COMMIT_SHA", "initial")
 POSTGRES_URL = os.getenv("POSTGRES_URL") or os.getenv("POSTGRES_PRISMA_URL")
-USING_POSTGRES = bool(POSTGRES_URL)
+USING_POSTGRES = bool(POSTGRES_URL and psycopg)
 
 
 class DatabaseConnection:

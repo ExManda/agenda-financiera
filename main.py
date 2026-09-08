@@ -57,13 +57,26 @@ def serve_frontend():
     return FileResponse(BASE_DIR / "index.html")
 
 
+@app.get("/api/health")
+def health():
+    return {
+        "status": "ok",
+        "storage": "postgres" if USING_POSTGRES else "sqlite",
+        "persistent_storage_configured": bool(POSTGRES_URL),
+    }
+
+
 def get_db():
     global USING_POSTGRES
+    if os.getenv("VERCEL") and not POSTGRES_URL:
+        raise RuntimeError("POSTGRES_URL no está configurada en Vercel")
     if USING_POSTGRES:
         try:
             return DatabaseConnection(psycopg.connect(POSTGRES_URL, row_factory=dict_row, connect_timeout=5))
         except psycopg.Error:
             USING_POSTGRES = False
+            if os.getenv("VERCEL"):
+                raise RuntimeError("No se pudo conectar con Supabase PostgreSQL")
     needs_seed = not DB_PATH.exists() or not DB_SEED_MARKER.exists()
     if not needs_seed:
         needs_seed = DB_SEED_MARKER.read_text() != DB_SEED_VERSION
@@ -263,7 +276,11 @@ class MonthlyStatus(BaseModel):
 
 @app.on_event("startup")
 def startup_event():
-    init_db()
+    if not (os.getenv("VERCEL") and not POSTGRES_URL):
+        try:
+            init_db()
+        except RuntimeError:
+            pass
 
 
 @app.get("/api/users")

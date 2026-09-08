@@ -1,13 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from typing import Optional, List
 import sqlite3
 import os
 import shutil
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
@@ -286,6 +286,60 @@ def get_services(month: Optional[str] = None):
     rows = conn.execute("SELECT s.*, u.name as owner_name, a.name as account_name FROM services s LEFT JOIN users u ON u.id = s.owner_user_id LEFT JOIN accounts a ON a.id = s.account_id ORDER BY s.due_date").fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def ics_escape(value):
+    return str(value or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+@app.get("/api/calendar.ics")
+def download_calendar(month: Optional[str] = None):
+    selected_month = month or datetime.now().strftime("%Y-%m")
+    months = [selected_month]
+    if month is None:
+        start = datetime.strptime(selected_month, "%Y-%m")
+        months = []
+        for offset in range(12):
+            current = start.month - 1 + offset
+            months.append(f"{start.year + current // 12:04d}-{current % 12 + 1:02d}")
+    conn = get_db()
+    events = []
+    for selected_month in months:
+        for service in month_services(conn, selected_month):
+            due = datetime.strptime(service["due_date"], "%Y-%m-%d")
+            description = f"Vencimiento: {service['category']} - {money_text(service['amount'])}"
+            dates = [due]
+            if service["frequency"] == "semanal":
+                year, month = due.year, due.month
+                dates = [
+                    datetime(year, month, day_number)
+                    for day_number in range(1, calendar.monthrange(year, month)[1] + 1)
+                    if datetime(year, month, day_number).weekday() == due.weekday()
+                ]
+            for occurrence in dates:
+                events.extend([
+                    "BEGIN:VEVENT",
+                    f"UID{service['id']}-{occurrence:%Y%m%d}@agenda-financiera",
+                    f"DTSTART;VALUE=DATE:{occurrence:%Y%m%d}",
+                    f"DTEND;VALUE=DATE:{(occurrence + timedelta(days=1)):%Y%m%d}",
+                    f"SUMMARY:{ics_escape(service['name'])}",
+                    f"DESCRIPTION:{ics_escape(description)}",
+                    "BEGIN:VALARM",
+                    "TRIGGER:-P1D",
+                    "ACTION:DISPLAY",
+                    f"DESCRIPTION:Vence mañana: {ics_escape(service['name'])}",
+                    "END:VALARM",
+                    "END:VEVENT",
+                ])
+    conn.close()
+    calendar_feed = "\r\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Agenda Financiera//ES", "CALSCALE:GREGORIAN", *events, "END:VCALENDAR", ""])
+    filename = f"agenda-{selected_month}.ics"
+    headers = {} if month is None else {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=calendar_feed, media_type="text/calendar", headers=headers)
+
+
+def money_text(value):
+    return f"$ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 @app.put("/api/services/{service_id}/monthly-status")

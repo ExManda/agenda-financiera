@@ -298,7 +298,13 @@ def seed_postgres(conn):
         if execute(conn, f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"]:
             continue
         for row in rows:
-            execute(conn, f"INSERT INTO {table} ({names}) VALUES ({placeholders})", tuple(row))
+            values = list(row)
+            for index, column in enumerate(columns):
+                if column in ("due_date", "payment_date") and isinstance(values[index], str):
+                    values[index] = datetime.strptime(values[index], "%Y-%m-%d").date()
+                elif column == "is_shared":
+                    values[index] = bool(values[index])
+            execute(conn, f"INSERT INTO {table} ({names}) VALUES ({placeholders})", tuple(values))
         execute(conn, f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE((SELECT MAX(id) FROM {table}), 1), true)")
     seed.close()
 

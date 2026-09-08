@@ -54,8 +54,12 @@ def serve_frontend():
 
 
 def get_db():
+    global USING_POSTGRES
     if USING_POSTGRES:
-        return DatabaseConnection(psycopg.connect(POSTGRES_URL, row_factory=dict_row))
+        try:
+            return DatabaseConnection(psycopg.connect(POSTGRES_URL, row_factory=dict_row, connect_timeout=5))
+        except psycopg.Error:
+            USING_POSTGRES = False
     needs_seed = not DB_PATH.exists() or not DB_SEED_MARKER.exists()
     if not needs_seed:
         needs_seed = DB_SEED_MARKER.read_text() != DB_SEED_VERSION

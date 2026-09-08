@@ -32,8 +32,13 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path("/tmp") / DB_NAME if os.getenv("VERCEL") else BASE_DIR / DB_NAME
 DB_SEED_MARKER = DB_PATH.with_suffix(".seed")
 DB_SEED_VERSION = os.getenv("VERCEL_GIT_COMMIT_SHA", "initial")
-POSTGRES_URL = os.getenv("POSTGRES_URL") or os.getenv("POSTGRES_PRISMA_URL")
-USING_POSTGRES = bool(POSTGRES_URL and psycopg)
+POSTGRES_URLS = [value for value in (
+    os.getenv("POSTGRES_URL"),
+    os.getenv("POSTGRES_URL_NON_POOLING"),
+    os.getenv("POSTGRES_PRISMA_URL"),
+) if value]
+POSTGRES_URL = POSTGRES_URLS[0] if POSTGRES_URLS else None
+USING_POSTGRES = bool(POSTGRES_URLS and psycopg)
 
 
 class DatabaseConnection:
@@ -61,13 +66,15 @@ def serve_frontend():
 def health():
     postgres_connection = False
     postgres_error = None
-    if POSTGRES_URL and psycopg:
-        try:
-            connection = psycopg.connect(POSTGRES_URL, connect_timeout=5)
-            connection.close()
-            postgres_connection = True
-        except Exception as error:
-            postgres_error = type(error).__name__
+    if POSTGRES_URLS and psycopg:
+        for database_url in POSTGRES_URLS:
+            try:
+                connection = psycopg.connect(database_url, connect_timeout=5)
+                connection.close()
+                postgres_connection = True
+                break
+            except Exception as error:
+                postgres_error = type(error).__name__
     return {
         "status": "ok",
         "storage": "postgres" if postgres_connection else "sqlite",
@@ -82,12 +89,14 @@ def get_db():
     if os.getenv("VERCEL") and not POSTGRES_URL:
         raise RuntimeError("POSTGRES_URL no está configurada en Vercel")
     if USING_POSTGRES:
-        try:
-            return DatabaseConnection(psycopg.connect(POSTGRES_URL, row_factory=dict_row, connect_timeout=5))
-        except psycopg.Error:
-            USING_POSTGRES = False
-            if os.getenv("VERCEL"):
-                raise RuntimeError("No se pudo conectar con Supabase PostgreSQL")
+        for database_url in POSTGRES_URLS:
+            try:
+                return DatabaseConnection(psycopg.connect(database_url, row_factory=dict_row, connect_timeout=5))
+            except psycopg.Error:
+                continue
+        USING_POSTGRES = False
+        if os.getenv("VERCEL"):
+            raise RuntimeError("No se pudo conectar con Supabase PostgreSQL")
     needs_seed = not DB_PATH.exists() or not DB_SEED_MARKER.exists()
     if not needs_seed:
         needs_seed = DB_SEED_MARKER.read_text() != DB_SEED_VERSION
